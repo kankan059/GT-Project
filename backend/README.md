@@ -21,6 +21,22 @@ API reads `backend/data/networks/tezu_roads_drive.graphml`,
 
 Open `http://127.0.0.1:8000/docs` for the interactive API documentation.
 
+## Frontend
+
+Start the backend and generate its local datasets first. In a second terminal,
+run from the project root:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. To use a different backend URL, copy
+`frontend/.env.example` to `frontend/.env.local` and set
+`NEXT_PUBLIC_API_BASE_URL`. See the project-root `done.md` for a summary of the
+frontend features and current API limitations.
+
 ## API
 
 - `GET /health`
