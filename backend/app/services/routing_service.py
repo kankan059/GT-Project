@@ -84,6 +84,9 @@ class RoutingService:
         ) > self.config.STUDY_RADIUS_KM * 1000:
             raise ValueError(self.config.ERROR_MESSAGES["OUTSIDE_STUDY_AREA"])
 
+        if not self.graph_service.is_graph_loaded():
+            self.graph_service.load_graphs()
+
         # Find nearest graph node to starting location
         try:
             start_node, distance_to_node = self.graph_service.find_nearest_node(

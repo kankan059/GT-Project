@@ -17,6 +17,7 @@ import numpy as np
 from datetime import datetime
 import warnings
 import logging
+import math
 from pathlib import Path
 
 # Suppress warnings
@@ -314,7 +315,29 @@ def save_graphml_files(G, driving=True, output_dir=None):
     output_path = output_dir / graph_filename
 
     try:
-        nx.write_graphml(G, output_path)
+        graph_for_graphml = G.copy()
+        for _, _, _, data in graph_for_graphml.edges(keys=True, data=True):
+            data.pop("geometry", None)
+            for attribute, value in data.items():
+                if isinstance(value, np.generic):
+                    data[attribute] = value.item()
+                elif not isinstance(value, (str, int, float, bool)):
+                    data[attribute] = str(value)
+
+        for _, data in graph_for_graphml.nodes(data=True):
+            for attribute, value in data.items():
+                if isinstance(value, np.generic):
+                    data[attribute] = value.item()
+                elif not isinstance(value, (str, int, float, bool)):
+                    data[attribute] = str(value)
+
+        for attribute, value in graph_for_graphml.graph.items():
+            if isinstance(value, np.generic):
+                graph_for_graphml.graph[attribute] = value.item()
+            elif not isinstance(value, (str, int, float, bool)):
+                graph_for_graphml.graph[attribute] = str(value)
+
+        nx.write_graphml(graph_for_graphml, output_path)
         logger.info(f"Saved {len(G.nodes)} node, {len(G.edges)} edge graph to {output_path}")
     except Exception as e:
         logger.error(f"Failed to save GraphML file: {e}")
@@ -375,17 +398,29 @@ def validate_dataset(driving_G, walking_G, shelters_path, roads_path, scenarios_
     else:
         logger.info(f"✓ All roads have valid edge IDs: {roads_df['edge_id'].nunique()} unique")
 
-    # Validate edge ID format
-    if not roads_df["edge_id"].iloc[0].startswith(("0_", "1_", "2_", "3_")):
-        logger.warning("Edge IDs don't follow expected pattern (verify algorithm compatibility)")
-
     scenarios_df = pd.read_csv(scenarios_path)
     if not set(scenarios_df["status"]).issubset({"AVAILABLE", "PARTIALLY_FLOODED", "BLOCKED"}):
         logger.error("Invalid road status found in flood scenarios")
         all_valid = False
 
-    shelter_graph = ox.distance.nearest_nodes(driving_G, X=shelters_df["longitude"], Y=shelters_df["latitude"])
-    if len(shelter_graph) != len(shelters_df):
+    shelter_graph = []
+    for _, shelter in shelters_df.iterrows():
+        latitude = float(shelter["latitude"])
+        longitude = float(shelter["longitude"])
+        nearest_node = min(
+            driving_G.nodes(data=True),
+            key=lambda item: _haversine_distance(
+                latitude,
+                longitude,
+                float(item[1].get("y", item[1].get("lat"))),
+                float(item[1].get("x", item[1].get("lon"))),
+            ),
+        )[0]
+        shelter_graph.append(nearest_node)
+
+    if len(shelter_graph) != len(shelters_df) or any(
+        driving_G.degree(node) == 0 for node in shelter_graph
+    ):
         logger.error("Some shelters could not be connected to the driving network")
         all_valid = False
 
@@ -395,6 +430,21 @@ def validate_dataset(driving_G, walking_G, shelters_path, roads_path, scenarios_
         logger.error("✗ Dataset validation FAILED")
 
     return all_valid
+
+
+def _haversine_distance(lat1, lon1, lat2, lon2):
+    """Return the distance in meters between two latitude/longitude points."""
+    earth_radius_m = 6371000
+    lat1_rad, lat2_rad = math.radians(lat1), math.radians(lat2)
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
+    haversine = (
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(lat1_rad)
+        * math.cos(lat2_rad)
+        * math.sin(delta_lon / 2) ** 2
+    )
+    return 2 * earth_radius_m * math.asin(math.sqrt(haversine))
 
 
 def main():

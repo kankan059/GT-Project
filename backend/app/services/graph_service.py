@@ -10,11 +10,11 @@ Used by: FastAPI endpoints and routing algorithms.
 import logging
 import os
 import warnings
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import networkx as nx
-import osmnx as ox
 
 from backend.config import Settings
 
@@ -140,16 +140,20 @@ class GraphService:
         G = self.get_graph(travel_mode)
 
         try:
-            # Use OSMnx to find nearest node
-            nearest_node = ox.distance.nearest_nodes(G, X=lon, Y=lat)
+            nearest_node = None
+            distance = float("inf")
+            for node_id, node_data in G.nodes(data=True):
+                node_lat = float(node_data.get("lat", node_data.get("y")))
+                node_lon = float(node_data.get("lon", node_data.get("x")))
+                node_distance = self._haversine_distance(
+                    lat, lon, node_lat, node_lon
+                )
+                if node_distance < distance:
+                    nearest_node = node_id
+                    distance = node_distance
 
-            # Calculate approximate distance using haversine formula
-            # Get node coordinates
-            node_data = G.nodes[nearest_node]
-            node_lat = float(node_data.get("lat", node_data.get("y", 0)))
-            node_lon = float(node_data.get("lon", node_data.get("x", 0)))
-
-            distance = self._haversine_distance(lat, lon, node_lat, node_lon)
+            if nearest_node is None:
+                raise ValueError("The selected road network has no nodes")
 
             logger.info(f"Nearest node: {nearest_node} at distance {distance:.2f} meters")
             return nearest_node, distance
@@ -284,8 +288,6 @@ class GraphService:
         Returns:
             Distance in meters
         """
-        import math
-
         R = 6371000  # Earth radius in meters
 
         lat1_rad = math.radians(lat1)
